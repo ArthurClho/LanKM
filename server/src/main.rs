@@ -1,13 +1,13 @@
-use fltk::{app, button::Button, prelude::*, window::Window};
 use std::io::Write;
 use std::net;
-use std::sync::mpsc;
+use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_LCONTROL, VK_LMENU, VK_TAB};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, SetWindowsHookExW, HHOOK, KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN,
-    WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage, HHOOK,
+    KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 // From https://learn.microsoft.com/en-us/windows/win32/inputdev/about-keyboard-input#scan-codes
@@ -36,16 +36,35 @@ static EXTENDED_TABLE: [u16; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-static mut GLOBAL_WINDOW_HANDLE: HWND = HWND(std::ptr::null_mut());
 static mut GLOBAL_SENDER: Option<mpsc::Sender<u64>> = None;
 static mut GLOBAL_CAPTURING: bool = false;
 
+static mut GLOBAL_CONTROL_PRESSED: bool = false;
+static mut GLOBAL_ALT_PRESSED: bool = false;
+
 unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
+    let kbd_event: KBDLLHOOKSTRUCT = *(l_param.0 as *const _);
+    let _type = match w_param.0 as u32 {
+        WM_KEYDOWN | WM_SYSKEYDOWN => WM_KEYDOWN,
+        WM_KEYUP | WM_SYSKEYUP => WM_KEYUP,
+        _ => panic!("Invalid wParam"),
+    };
+
+    match VIRTUAL_KEY(kbd_event.vkCode as u16) {
+        VK_LMENU => GLOBAL_ALT_PRESSED = _type == WM_KEYDOWN,
+        VK_LCONTROL => GLOBAL_CONTROL_PRESSED = _type == WM_KEYDOWN,
+        VK_TAB => {
+            if _type == WM_KEYDOWN && GLOBAL_ALT_PRESSED && GLOBAL_CONTROL_PRESSED {
+                GLOBAL_CAPTURING = !GLOBAL_CAPTURING;
+                println!("Set GLOBAL_CAPTURING to {}", GLOBAL_CAPTURING);
+            }
+        }
+        _ => {}
+    }
+
     if !GLOBAL_CAPTURING {
         return CallNextHookEx(HHOOK(std::ptr::null_mut()), code, w_param, l_param);
     }
-
-    let kbd_event: KBDLLHOOKSTRUCT = *(l_param.0 as *const _);
 
     let scan_code = if kbd_event.flags.0 & 1 == 1 {
         EXTENDED_TABLE[kbd_event.scanCode as usize]
@@ -53,12 +72,6 @@ unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPA
         SCANCODE_TABLE[kbd_event.scanCode as usize]
     };
     let flags = kbd_event.flags.0 & 0xFF;
-    let _type = match w_param.0 as u32 {
-        WM_KEYDOWN | WM_SYSKEYDOWN => WM_KEYDOWN,
-        WM_KEYUP | WM_SYSKEYUP => WM_KEYUP,
-        _ => panic!("Invalid wParam"),
-    };
-
     let bits = ((_type as usize) << 32) | ((flags as usize) << 8) | scan_code as usize;
     GLOBAL_SENDER.as_ref().unwrap().send(bits as u64).unwrap();
 
@@ -66,22 +79,9 @@ unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPA
 }
 
 fn main() {
-    let app = app::App::default();
-    let mut wind = Window::new(100, 100, 400, 300, "Hello from rust");
-    let mut but = Button::new(160, 210, 80, 40, "Click me!");
-    wind.end();
-    wind.show();
-    but.set_callback(move |_| {
-        unsafe {
-            GLOBAL_CAPTURING = !GLOBAL_CAPTURING;
-            println!("Set GLOBAL_CAPTURING to {}", GLOBAL_CAPTURING);
-        };
-    });
-
     let (sender, receiver) = mpsc::channel::<u64>();
 
     unsafe {
-        GLOBAL_WINDOW_HANDLE = HWND(wind.raw_handle());
         GLOBAL_SENDER = Some(sender);
 
         SetWindowsHookExW(
@@ -99,11 +99,29 @@ fn main() {
         let (mut client, addr) = listener.accept().unwrap();
         println!("client connected from {}", addr);
 
+        // clear anything that was buffered before a client connected
+        let try_recv_error = loop {
+            match receiver.try_recv() {
+                Ok(_) => {}
+                Err(e) => break e,
+            }
+        };
+        match try_recv_error {
+            TryRecvError::Empty => {}
+            err => panic!("Channel error {}", err),
+        }
+
         loop {
             let bits = receiver.recv().unwrap();
             client.write_all(&bits.to_le_bytes()).unwrap();
         }
     });
 
-    app.run().unwrap();
+    unsafe {
+        let mut msg: MSG = std::mem::zeroed();
+        while GetMessageW(&mut msg, HWND(std::ptr::null_mut()), 0, 0).into() {
+            let _ = TranslateMessage(&msg);
+            let _ = DispatchMessageW(&msg);
+        }
+    }
 }
