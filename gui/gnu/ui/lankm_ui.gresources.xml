@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/net/arthurclho/lankm/ui">
+    <file>application-window.ui</file>
+    <file>server-page.ui</file>
+  </gresource>
+</gresources>
