@@ -17,8 +17,8 @@ LOCAL_DIR="$BUILD_DIR/local"
 mkdir -p $BUILD_DIR
 mkdir -p $LOCAL_DIR
 
-pushd server
-    # cargo build --target-dir "$RUST_TARGET_DIR"
+pushd lankm
+    cargo build --target-dir "$RUST_TARGET_DIR"
 popd
 
 pushd gui/gnu
