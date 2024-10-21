@@ -32,6 +32,8 @@ if [ ! -z "$VSCMD_VER" ]; then
     # executable instead of an exe and a dll
     dotnet publish gui/Windows --artifacts-path "$GUI_BUILD_DIR"
 else
+    GUI_OUTPUT="$GUI_BUILD_DIR/src/lankm-gui"
+
     pushd gui/gnu
         if [[ ! -e "$GUI_BUILD_DIR/build.ninja" ]]; then
             meson setup "$GUI_BUILD_DIR" .
