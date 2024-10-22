@@ -44,7 +44,7 @@ static mut GLOBAL_ALT_PRESSED: bool = false;
 
 unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     let kbd_event: KBDLLHOOKSTRUCT = *(l_param.0 as *const _);
-    
+
     let kind = match w_param.0 as u32 {
         WM_KEYDOWN | WM_SYSKEYDOWN => KeyEventKind::Press,
         WM_KEYUP | WM_SYSKEYUP => KeyEventKind::Release,

@@ -1,5 +1,7 @@
 use std::sync::mpsc;
 
-pub fn init(_sender: mpsc::Sender<u64>) {
+use crate::data::KeyEvent;
+
+pub fn init(_sender: mpsc::Sender<KeyEvent>) {
     todo!();
 }

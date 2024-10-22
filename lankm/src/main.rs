@@ -2,15 +2,37 @@ use std::io::Write;
 use std::net;
 use std::sync::mpsc::{self, TryRecvError};
 
+use clap::Parser;
+
 mod data;
 mod input_capture;
 
+
+#[derive(Parser, Debug)]
+enum Args {
+    Client { address: net::Ipv4Addr, port: u16 },
+    Server { port: u16 },
+}
+
 fn main() {
+    let args = Args::parse();
+
+    match args {
+        Args::Client { address, port } => run_client(address, port),
+        Args::Server { port } => run_server(port),
+    }
+}
+
+fn run_client(address: net::Ipv4Addr, port: u16) {
+    todo!();
+}
+
+fn run_server(port: u16) {
     let (sender, receiver) = mpsc::channel::<data::KeyEvent>();
 
     input_capture::init(sender);
-    
-    let listener = net::TcpListener::bind("0.0.0.0:6069").unwrap();
+
+    let listener = net::TcpListener::bind(("0.0.0.0", port)).unwrap();
     println!("Waiting for client...");
     let (mut client, addr) = listener.accept().unwrap();
     println!("client connected from {}", addr);
@@ -31,5 +53,4 @@ fn main() {
         let event = receiver.recv().unwrap();
         client.write_all(&event.to_bytes()).unwrap();
     }
-    
 }
