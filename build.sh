@@ -9,37 +9,34 @@ set -e
 # Cd into this scripts directory
 cd $(dirname $0)
 
-BUILD_DIR=$(realpath "build")
-RUST_TARGET_DIR="$BUILD_DIR/target"
-GUI_BUILD_DIR="$BUILD_DIR/gui"
-LOCAL_DIR="$BUILD_DIR/local"
+LOCAL_DIR=".local"
 
-mkdir -p $BUILD_DIR
 mkdir -p $LOCAL_DIR
 
 pushd lankm
-    RUST_OUTPUT="$RUST_TARGET_DIR/debug/lankm-headless"
-    cargo build --target-dir "$RUST_TARGET_DIR"
+    cargo build
+    RUST_OUTPUT=$(realpath "./target/debug/lankm-headless")
 popd
 
 # Test for the presence of a vcvars64.bat variable as an indication
 # we're on Windows
 if [ ! -z "$VSCMD_VER" ]; then
     RUST_OUTPUT="$RUST_OUTPUT.exe"
-    GUI_OUTPUT="$GUI_BUILD_DIR/publish/LanKM/release_win-x64/LanKM.exe"
 
     # We use 'publish' instead of build here so that we get a single
     # executable instead of an exe and a dll
-    dotnet publish gui/Windows --artifacts-path "$GUI_BUILD_DIR"
-else
-    GUI_OUTPUT="$GUI_BUILD_DIR/src/lankm-gui"
+    dotnet publish gui/Windows
 
+    GUI_OUTPUT=$(realpath "gui/Windows/publish/LanKM/release_win-x64/LanKM.exe")
+else
     pushd gui/gnu
-        if [[ ! -e "$GUI_BUILD_DIR/build.ninja" ]]; then
-            meson setup "$GUI_BUILD_DIR" .
+        if [[ ! -e "./build/build.ninja" ]]; then
+            meson setup "./build" .
         fi
 
-        ninja -C "$GUI_BUILD_DIR"
+        ninja -C ./build
+
+        GUI_OUTPUT=$(realpath "./build/src/lankm-gui")
     popd
 fi
 

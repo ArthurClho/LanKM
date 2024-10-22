@@ -1,4 +1,6 @@
-/build
+build/
+target/
+.local/
 
 # Glade autosave files
 *.ui~
