@@ -32,7 +32,7 @@ namespace LanKM
                 var count = await mProc.StandardOutput.ReadAsync(buffer);
 
                 var text = new string(buffer[..count]);
-                textBox1.AppendText(text);
+                textBox1.AppendText(text.ReplaceLineEndings());
             }
 
             if (mProc != null)
