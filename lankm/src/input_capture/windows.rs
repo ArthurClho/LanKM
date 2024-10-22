@@ -8,6 +8,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
+use crate::data::{KeyEvent, KeyEventKind};
 
 // From https://learn.microsoft.com/en-us/windows/win32/inputdev/about-keyboard-input#scan-codes
 // SCANCODE_TABLE[windows scan code] = hid
@@ -35,7 +36,7 @@ static EXTENDED_TABLE: [u16; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-static mut GLOBAL_SENDER: Option<mpsc::Sender<u64>> = None;
+static mut GLOBAL_SENDER: Option<mpsc::Sender<KeyEvent>> = None;
 static mut GLOBAL_CAPTURING: bool = false;
 
 static mut GLOBAL_CONTROL_PRESSED: bool = false;
@@ -43,17 +44,18 @@ static mut GLOBAL_ALT_PRESSED: bool = false;
 
 unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     let kbd_event: KBDLLHOOKSTRUCT = *(l_param.0 as *const _);
-    let _type = match w_param.0 as u32 {
-        WM_KEYDOWN | WM_SYSKEYDOWN => WM_KEYDOWN,
-        WM_KEYUP | WM_SYSKEYUP => WM_KEYUP,
+    
+    let kind = match w_param.0 as u32 {
+        WM_KEYDOWN | WM_SYSKEYDOWN => KeyEventKind::Press,
+        WM_KEYUP | WM_SYSKEYUP => KeyEventKind::Release,
         _ => panic!("Invalid wParam"),
     };
 
     match VIRTUAL_KEY(kbd_event.vkCode as u16) {
-        VK_LMENU => GLOBAL_ALT_PRESSED = _type == WM_KEYDOWN,
-        VK_LCONTROL => GLOBAL_CONTROL_PRESSED = _type == WM_KEYDOWN,
+        VK_LMENU => GLOBAL_ALT_PRESSED = kind == KeyEventKind::Press,
+        VK_LCONTROL => GLOBAL_CONTROL_PRESSED = kind == KeyEventKind::Press,
         VK_TAB => {
-            if _type == WM_KEYDOWN && GLOBAL_ALT_PRESSED && GLOBAL_CONTROL_PRESSED {
+            if kind == KeyEventKind::Press && GLOBAL_ALT_PRESSED && GLOBAL_CONTROL_PRESSED {
                 GLOBAL_CAPTURING = !GLOBAL_CAPTURING;
                 println!("Set GLOBAL_CAPTURING to {}", GLOBAL_CAPTURING);
             }
@@ -65,19 +67,19 @@ unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPA
         return CallNextHookEx(HHOOK(std::ptr::null_mut()), code, w_param, l_param);
     }
 
-    let scan_code = if kbd_event.flags.0 & 1 == 1 {
+    let hid = if kbd_event.flags.0 & 1 == 1 {
         EXTENDED_TABLE[kbd_event.scanCode as usize]
     } else {
         SCANCODE_TABLE[kbd_event.scanCode as usize]
     };
-    let flags = kbd_event.flags.0 & 0xFF;
-    let bits = ((_type as usize) << 32) | ((flags as usize) << 8) | scan_code as usize;
-    GLOBAL_SENDER.as_ref().unwrap().send(bits as u64).unwrap();
+
+    let event = KeyEvent { hid, kind };
+    GLOBAL_SENDER.as_ref().unwrap().send(event).unwrap();
 
     LRESULT(1)
 }
 
-pub fn init(sender: mpsc::Sender<u64>) {
+pub fn init(sender: mpsc::Sender<KeyEvent>) {
     thread::spawn(move || {
         unsafe {
             GLOBAL_SENDER = Some(sender);

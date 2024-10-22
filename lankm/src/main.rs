@@ -2,10 +2,11 @@ use std::io::Write;
 use std::net;
 use std::sync::mpsc::{self, TryRecvError};
 
+mod data;
 mod input_capture;
 
 fn main() {
-    let (sender, receiver) = mpsc::channel::<u64>();
+    let (sender, receiver) = mpsc::channel::<data::KeyEvent>();
 
     input_capture::init(sender);
     
@@ -27,8 +28,8 @@ fn main() {
     }
 
     loop {
-        let bits = receiver.recv().unwrap();
-        client.write_all(&bits.to_le_bytes()).unwrap();
+        let event = receiver.recv().unwrap();
+        client.write_all(&event.to_bytes()).unwrap();
     }
     
 }
