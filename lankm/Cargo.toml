@@ -1,5 +1,5 @@
 [package]
-name = "lankm"
+name = "lankm-headless"
 version = "0.1.0"
 edition = "2021"
 

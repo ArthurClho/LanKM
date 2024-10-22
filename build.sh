@@ -18,12 +18,14 @@ mkdir -p $BUILD_DIR
 mkdir -p $LOCAL_DIR
 
 pushd lankm
+    RUST_OUTPUT="$RUST_TARGET_DIR/debug/lankm-headless"
     cargo build --target-dir "$RUST_TARGET_DIR"
 popd
 
 # Test for the presence of a vcvars64.bat variable as an indication
 # we're on Windows
 if [ ! -z "$VSCMD_VER" ]; then
+    RUST_OUTPUT="$RUST_OUTPUT.exe"
     GUI_OUTPUT="$GUI_BUILD_DIR/publish/LanKM/release_win-x64/LanKM.exe"
 
     # We use 'publish' instead of build here so that we get a single
@@ -41,4 +43,5 @@ fi
 
 # The gui will look for the backend on the same folder it's on
 # so we copy both of them to a common location
+cp -v $RUST_OUTPUT $LOCAL_DIR/
 cp -v $GUI_OUTPUT $LOCAL_DIR/

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 
 namespace LanKM
 {
@@ -34,16 +35,28 @@ namespace LanKM
                 textBox1.AppendText(text);
             }
 
-            mProc = null;
+            if (mProc != null)
+            {
+                log("INFO: Process exited with code " + mProc.ExitCode);
+                mProc = null;
+            }
             update_button_text();
+        }
+
+        private void log(string message)
+        {
+            textBox1.AppendText(message + "\r\n");
         }
 
         private void StartServer()
         {
-            var startInfo = new ProcessStartInfo("ping")
+            var exe_dir = System.AppContext.BaseDirectory;
+            var lankm = Path.Join(exe_dir, "lankm-headless");
+
+            log("Executing " + lankm + "...");
+            var startInfo = new ProcessStartInfo(lankm)
             {
                 UseShellExecute = false,
-                Arguments = "google.com -t",
                 RedirectStandardOutput = true,
                 RedirectStandardInput = true,
                 CreateNoWindow = true
@@ -55,7 +68,7 @@ namespace LanKM
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                log("ERROR: " + e);
             }
 
             update_log();
