@@ -2,3 +2,6 @@
 
 # Glade autosave files
 *.ui~
+
+# Visual studio files
+.vs/
