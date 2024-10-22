@@ -15,6 +15,7 @@ public class ServerPage : Gtk.Box {
     private Gtk.TextBuffer text_buffer;
 
     private GLib.Subprocess? child_process = null;
+    private string lankm_headless_path;
 
     public ServerPage () {
         text_buffer = new Gtk.TextBuffer (null);
@@ -24,6 +25,14 @@ public class ServerPage : Gtk.Box {
 
         update_button_text ();
         this_ip_label.label = "This machine's IP Addresses: " + get_local_ips();
+
+        try {
+            var s = FileUtils.read_link ("/proc/self/exe");
+            lankm_headless_path = Path.get_dirname (s) + "/lankm-headless";
+        } catch (FileError e) {
+            print ("Error reading /proc/self/exe link: %s\n", (string) e);
+            lankm_headless_path = "";
+        }
     }
 
     static string get_local_ips() {
@@ -84,6 +93,19 @@ public class ServerPage : Gtk.Box {
         return true;
     }
 
+    void log(string message) {
+        Gtk.TextIter iter;
+        text_buffer.get_end_iter (out iter);
+        text_buffer.insert (ref iter, message, message.length);
+
+        text_buffer.get_end_iter (out iter);
+        text_buffer.insert (ref iter, "\n", 1);
+
+        text_buffer.get_end_iter (out iter);
+        var mark = text_buffer.create_mark (null, iter, false);
+        server_log.scroll_to_mark (mark, 0.0, true, 0.0, 0.0);
+    }
+
     async void log_update() {
         while (child_process != null) {
             var stdout = child_process.get_stdout_pipe ();
@@ -97,7 +119,7 @@ public class ServerPage : Gtk.Box {
             }
 
             if (count == 0) {
-                print ("Process exited with code %u\n", child_process.get_status ());
+                log ("Process exited with code " + child_process.get_status().to_string());
                 child_process = null;
                 update_button_text();
                 break;
@@ -107,27 +129,21 @@ public class ServerPage : Gtk.Box {
             builder.append_printf ("%.*s", count, buffer);
             var s = builder.free_and_steal ();
 
-            Gtk.TextIter iter;
-            text_buffer.get_end_iter (out iter);
-            text_buffer.insert (ref iter, s, s.length);
-            
-            text_buffer.get_end_iter (out iter);
-            var mark = text_buffer.create_mark (null, iter, false);
-            server_log.scroll_to_mark (mark, 0.0, true, 0.0, 0.0);
+            log(s);
         }
     }
 
     void start_server() {
         var flags = GLib.SubprocessFlags.STDOUT_PIPE
-                  | GLib.SubprocessFlags.STDERR_SILENCE;
+                  | GLib.SubprocessFlags.STDERR_MERGE;
 
         try {
             // Placeholder ping to test the server_log scrolling
-            child_process = new GLib.Subprocess (flags, "ping", "google.com");
+            log ("Starting " + lankm_headless_path);
+            child_process = new GLib.Subprocess (flags, lankm_headless_path);
             log_update.begin();
         } catch (Error e) {
-            // TODO: Display on server log
-            print ("Error spawning child process: %s\n", (string)e);
+            log ("Error spawning child process: " + (string)e);
         }
     }
 
