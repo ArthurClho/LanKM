@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net;
 use std::sync::mpsc::{self, TryRecvError};
 
@@ -6,7 +6,7 @@ use clap::Parser;
 
 mod data;
 mod input_capture;
-
+mod input_injection;
 
 #[derive(Parser, Debug)]
 enum Args {
@@ -24,7 +24,16 @@ fn main() {
 }
 
 fn run_client(address: net::Ipv4Addr, port: u16) {
-    todo!();
+    let mut injector = input_injection::InputInjector::new();
+    let mut stream = net::TcpStream::connect((address, port)).unwrap();
+
+    loop {
+        let mut buffer = [0; 4];
+        stream.read_exact(&mut buffer).unwrap();
+
+        let event = data::KeyEvent::from_bytes(buffer);
+        injector.emit(event);
+    }
 }
 
 fn run_server(port: u16) {
