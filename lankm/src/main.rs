@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
-use std::net;
+use std::net::{self, IpAddr, SocketAddr};
 use std::sync::mpsc::{self, TryRecvError};
+use std::thread;
+use std::time::Duration;
 
 use clap::Parser;
 
@@ -8,28 +10,75 @@ mod data;
 mod input_capture;
 mod input_injection;
 
-#[derive(Parser, Debug)]
-enum Args {
+#[derive(Parser, Clone, Debug)]
+enum Command {
     Client { address: net::Ipv4Addr, port: u16 },
     Server { port: u16 },
+}
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[command(subcommand)]
+    command: Command,
+    #[arg(short, long, required=false, action=clap::ArgAction::SetTrue)]
+    verbose: bool,
 }
 
 fn main() {
     let args = Args::parse();
 
-    match args {
-        Args::Client { address, port } => run_client(address, port),
-        Args::Server { port } => run_server(port),
+    simple_logger::init_with_level(if args.verbose {
+        log::Level::Debug
+    } else {
+        log::Level::Warn
+    })
+    .unwrap();
+
+    match args.command {
+        Command::Client { address, port } => run_client(address, port),
+        Command::Server { port } => run_server(port),
+    }
+}
+
+fn connect_to_server(address: net::Ipv4Addr, port: u16) -> net::TcpStream {
+    let socket = SocketAddr::new(IpAddr::V4(address), port);
+    loop {
+        log::info!("Trying to connect");
+        match net::TcpStream::connect_timeout(&socket, Duration::from_secs(2)) {
+            Ok(stream) => {
+                log::info!("Connected to server");
+                return stream;
+            }
+            Err(e) => {
+                log::info!("Could not connect ({}) Retrying...", e);
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
     }
 }
 
 fn run_client(address: net::Ipv4Addr, port: u16) {
     let mut injector = input_injection::InputInjector::new();
-    let mut stream = net::TcpStream::connect((address, port)).unwrap();
+    let mut stream: Option<net::TcpStream> = None;
 
     loop {
+        let s = match stream.as_mut() {
+            Some(s) => s,
+            None => {
+                stream = Some(connect_to_server(address, port));
+                stream.as_mut().unwrap()
+            }
+        };
+
         let mut buffer = [0; 4];
-        stream.read_exact(&mut buffer).unwrap();
+        match s.read_exact(&mut buffer) {
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("Error reading from TcpStream: {}", e);
+                stream = None;
+                log::error!("Connection closed");
+            }
+        }
 
         let event = data::KeyEvent::from_bytes(buffer);
         injector.emit(event);
