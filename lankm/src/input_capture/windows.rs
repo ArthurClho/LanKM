@@ -1,14 +1,16 @@
 use std::sync::mpsc;
 use std::thread;
 
+use crate::data::{KeyEvent, KeyEventKind};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_LCONTROL, VK_LMENU, VK_TAB};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, VIRTUAL_KEY, VK_LCONTROL,
+    VK_LMENU, VK_TAB,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage, HHOOK,
     KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
-
-use crate::data::{KeyEvent, KeyEventKind};
 
 // From https://learn.microsoft.com/en-us/windows/win32/inputdev/about-keyboard-input#scan-codes
 // SCANCODE_TABLE[windows scan code] = hid
@@ -45,6 +47,11 @@ static mut GLOBAL_ALT_PRESSED: bool = false;
 unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     let kbd_event: KBDLLHOOKSTRUCT = *(l_param.0 as *const _);
 
+    if kbd_event.flags.0 & 0x00000010 != 0 && GLOBAL_CAPTURING {
+        // An injected event, very likely to be our own SendInput call
+        return CallNextHookEx(HHOOK(std::ptr::null_mut()), code, w_param, l_param);
+    }
+
     let kind = match w_param.0 as u32 {
         WM_KEYDOWN | WM_SYSKEYDOWN => KeyEventKind::Press,
         WM_KEYUP | WM_SYSKEYUP => KeyEventKind::Release,
@@ -58,6 +65,40 @@ unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPA
             if kind == KeyEventKind::Press && GLOBAL_ALT_PRESSED && GLOBAL_CONTROL_PRESSED {
                 GLOBAL_CAPTURING = !GLOBAL_CAPTURING;
                 println!("Set GLOBAL_CAPTURING to {}", GLOBAL_CAPTURING);
+
+                if GLOBAL_CAPTURING {
+                    let release_ctrl_key = KEYBDINPUT {
+                        wVk: VK_LCONTROL,
+                        wScan: 0x1D,
+                        dwFlags: KEYBD_EVENT_FLAGS(0x0002),
+                        time: 0,
+                        dwExtraInfo: 0,
+                    };
+                    let release_ctrl_input = INPUT {
+                        r#type: INPUT_TYPE(1),
+                        Anonymous: INPUT_0 {
+                            ki: release_ctrl_key,
+                        },
+                    };
+                    let release_alt_key = KEYBDINPUT {
+                        wVk: VK_LMENU,
+                        wScan: 0x38,
+                        dwFlags: KEYBD_EVENT_FLAGS(0x0002),
+                        time: 0,
+                        dwExtraInfo: 0,
+                    };
+                    let release_alt_input = INPUT {
+                        r#type: INPUT_TYPE(1),
+                        Anonymous: INPUT_0 {
+                            ki: release_alt_key,
+                        },
+                    };
+
+                    SendInput(
+                        &[release_ctrl_input, release_alt_input],
+                        std::mem::size_of::<INPUT>() as i32,
+                    );
+                }
             }
         }
         _ => {}
