@@ -65,7 +65,8 @@ namespace LanKM
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardInput = true,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                Arguments = "server 6000",
             };
 
             try
