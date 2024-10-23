@@ -12,6 +12,12 @@ namespace LanKM
             update_button_text();
         }
 
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            if (mProc != null)
+                mProc.Kill();
+        }
+
         void update_button_text()
         {
             if (mProc == null)
