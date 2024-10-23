@@ -27,7 +27,7 @@ if [ ! -z "$VSCMD_VER" ]; then
     # executable instead of an exe and a dll
     dotnet publish gui/Windows
 
-    GUI_OUTPUT=$(realpath "gui/Windows/publish/LanKM/release_win-x64/LanKM.exe")
+    GUI_OUTPUT=$(realpath "gui/Windows/bin/Release/net8.0-windows/win-x64/publish/LanKM.exe")
 else
     pushd gui/gnu
         if [[ ! -e "./build/build.ninja" ]]; then
