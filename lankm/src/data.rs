@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum KeyEventKind {
@@ -15,10 +17,20 @@ impl From<u8> for KeyEventKind {
     }
 }
 
-#[derive(Copy, Clone)]
+bitflags! {
+    #[derive(Copy, Clone, Debug)]
+    pub struct Modifiers: u8 {
+        const CTRL  = 1 << 0;
+        const ALT   = 1 << 1;
+        const SHIFT = 1 << 2;
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 pub struct KeyEvent {
     pub hid: u16,
     pub kind: KeyEventKind,
+    pub mods: Modifiers,
 }
 
 impl KeyEvent {
@@ -28,12 +40,14 @@ impl KeyEvent {
         let hid = self.hid.to_le_bytes();
         let kind = self.kind as u8;
 
-        [hid[0], hid[1], kind, 0]
+        [hid[0], hid[1], kind, self.mods.bits()]
     }
 
     pub fn from_bytes(bytes: [u8; Self::SIZE]) -> Self {
         let hid = u16::from_le_bytes([bytes[0], bytes[1]]);
         let kind: KeyEventKind = bytes[2].into();
-        Self { hid, kind }
+        let mods = Modifiers::from_bits(bytes[3]).unwrap();
+
+        Self { hid, kind, mods }
     }
 }

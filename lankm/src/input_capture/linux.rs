@@ -24,6 +24,31 @@ const fn invert_linux_table(table: &[u8; 252]) -> [u8; 252] {
 const LINUX_TO_HID_TABLE: [u8; 252] =
     invert_linux_table(&crate::input_injection::HID_TO_LINUX_TABLE);
 
+fn device_thread(sender: mpsc::Sender<KeyEvent>) {
+    loop {
+        for event in kbd.fetch_events().unwrap() {
+            if let InputEventKind::Key(key) = event.kind() {
+                // Ignore key repeats
+                if event.value() == 2 {
+                    continue;
+                }
+
+                let hid = LINUX_TO_HID_TABLE[key.0 as usize] as u16;
+                let kind = match event.value() {
+                    0 => KeyEventKind::Release,
+                    1 => KeyEventKind::Press,
+                    value => {
+                        log::error!("Unknown event value: {}", value);
+                        continue;
+                    }
+                };
+
+                kbd_sender.send(KeyEvent { hid, kind }).unwrap();
+            }
+        }
+    }
+}
+
 pub fn init(sender: mpsc::Sender<KeyEvent>) {
     log::debug!("Enumerating devices");
     let mut keyboards = Vec::new();
@@ -39,35 +64,10 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
     log::debug!("Done enumerating devices");
 
     for kbd in keyboards.into_iter() {
-        let kbd_sender = sender.clone();
         log::debug!(
             "Starting thread for device: {}",
             kbd.name().unwrap_or("<no name>")
         );
-        thread::spawn(move || {
-            let mut kbd = kbd;
-            loop {
-                for event in kbd.fetch_events().unwrap() {
-                    if let InputEventKind::Key(key) = event.kind() {
-                        // Ignore key repeats
-                        if event.value() == 2 {
-                            continue;
-                        }
-
-                        let hid = LINUX_TO_HID_TABLE[key.0 as usize] as u16;
-                        let kind = match event.value() {
-                            0 => KeyEventKind::Release,
-                            1 => KeyEventKind::Press,
-                            value => {
-                                log::error!("Unknown event value: {}", value);
-                                continue;
-                            }
-                        };
-
-                        kbd_sender.send(KeyEvent { hid, kind }).unwrap();
-                    }
-                }
-            }
-        });
+        thread::spawn(move || device_thread(kbd, sender.clone()));
     }
 }
