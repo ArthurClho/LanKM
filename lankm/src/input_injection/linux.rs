@@ -4,7 +4,7 @@ use evdev::uinput::{VirtualDevice, VirtualDeviceBuilder};
 use evdev::AttributeSet;
 
 // taken from drives/hid/usbhid/usbkbd.c in the linux 6.10.7 source
-const HID_TO_LINUX_TABLE: [u8; 252] = [
+pub(crate) const HID_TO_LINUX_TABLE: [u8; 252] = [
     0, 0, 0, 0, 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22,
     47, 17, 45, 21, 44, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 28, 1, 14, 15, 57, 12, 13, 26, 27, 43, 43,
     39, 40, 41, 51, 52, 53, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 87, 88, 99, 70, 119, 110,
