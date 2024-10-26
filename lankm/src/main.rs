@@ -10,8 +10,6 @@ mod data;
 mod input_capture;
 mod input_injection;
 
-use data::{KeyEventKind, Modifiers};
-
 #[derive(Parser, Clone, Debug)]
 enum Command {
     Client { address: net::Ipv4Addr, port: u16 },
@@ -109,20 +107,8 @@ fn run_server(port: u16) {
         err => panic!("Channel error {}", err),
     }
 
-    let mut sending = false;
     loop {
         let event = receiver.recv().unwrap();
-
-        if event.hid == 0x2B
-            && event.kind == KeyEventKind::Press
-            && event.mods.contains(Modifiers::CTRL | Modifiers::ALT)
-        {
-            sending = !sending;
-            log::info!("Turned {} sending", if sending { "On" } else { "Off" });
-        }
-
-        if sending {
-            client.write_all(&event.to_bytes()).unwrap();
-        }
+        client.write_all(&event.to_bytes()).unwrap();
     }
 }

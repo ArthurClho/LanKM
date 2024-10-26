@@ -27,7 +27,6 @@ const LINUX_TO_HID_TABLE: [u8; 252] =
 struct DeviceThreadArgs {
     pub kbd: evdev::Device,
     pub sender: mpsc::Sender<KeyEvent>,
-    pub inj_sender: mpsc::Sender<KeyEvent>,
 }
 
 fn device_thread(mut args: DeviceThreadArgs) {
@@ -60,7 +59,6 @@ fn device_thread(mut args: DeviceThreadArgs) {
                 }
 
                 args.sender.send(KeyEvent { hid, kind, mods }).unwrap();
-                args.inj_sender.send(KeyEvent { hid, kind, mods }).unwrap();
             }
         }
     }
@@ -87,10 +85,38 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
     let (inj_sender, inj_receiver) = mpsc::channel::<KeyEvent>();
     thread::spawn(move || {
         let mut injector = crate::input_injection::InputInjector::new();
+        let mut sending = false;
 
         loop {
             let event = inj_receiver.recv().unwrap();
-            injector.emit(event);
+
+            if event.hid == 0x2B
+                && event.kind == KeyEventKind::Press
+                && event.mods.contains(Modifiers::CTRL | Modifiers::ALT)
+            {
+                sending = !sending;
+                log::info!("Turned {} sending", if sending { "On" } else { "Off" });
+
+                if sending {
+                    // Release ctrl and alt
+                    let mut release = |hid| {
+                        injector.emit(KeyEvent {
+                            hid,
+                            kind: KeyEventKind::Release,
+                            mods: Modifiers::empty(),
+                        })
+                    };
+
+                    release(0xE0);
+                    release(0xE4);
+                    release(0xE2);
+                    release(0xE6);
+                }
+            } else if sending {
+                sender.send(event).unwrap();
+            } else {
+                injector.emit(event);
+            }
         }
     });
 
@@ -103,9 +129,8 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
         kbd.grab().unwrap();
 
         let args = DeviceThreadArgs {
-            kbd: kbd,
-            sender: sender.clone(),
-            inj_sender: inj_sender.clone(),
+            kbd,
+            sender: inj_sender.clone(),
         };
         thread::spawn(move || device_thread(args));
     }
