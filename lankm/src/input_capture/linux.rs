@@ -24,11 +24,16 @@ const fn invert_linux_table(table: &[u8; 252]) -> [u8; 252] {
 const LINUX_TO_HID_TABLE: [u8; 252] =
     invert_linux_table(&crate::input_injection::HID_TO_LINUX_TABLE);
 
-fn device_thread(mut kbd: evdev::Device, sender: mpsc::Sender<KeyEvent>) {
+struct DeviceThreadArgs {
+    pub kbd: evdev::Device,
+    pub sender: mpsc::Sender<KeyEvent>,
+}
+
+fn device_thread(mut args: DeviceThreadArgs) {
     let mut mods = Modifiers::empty();
 
     loop {
-        let events = kbd.fetch_events().unwrap();
+        let events = args.kbd.fetch_events().unwrap();
         for event in events {
             if let InputEventKind::Key(key) = event.kind() {
                 // Ignore key repeats
@@ -53,7 +58,7 @@ fn device_thread(mut kbd: evdev::Device, sender: mpsc::Sender<KeyEvent>) {
                     _ => {}
                 }
 
-                sender.send(KeyEvent { hid, kind, mods }).unwrap();
+                args.sender.send(KeyEvent { hid, kind, mods }).unwrap();
             }
         }
     }
@@ -78,7 +83,10 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
             "Starting thread for device: {}",
             kbd.name().unwrap_or("<no name>")
         );
-        let kbd_sender = sender.clone();
-        thread::spawn(move || device_thread(kbd, kbd_sender));
+        let args = DeviceThreadArgs {
+            kbd: kbd,
+            sender: sender.clone(),
+        };
+        thread::spawn(move || device_thread(args));
     }
 }
