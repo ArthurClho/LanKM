@@ -27,6 +27,7 @@ const LINUX_TO_HID_TABLE: [u8; 252] =
 struct DeviceThreadArgs {
     pub kbd: evdev::Device,
     pub sender: mpsc::Sender<KeyEvent>,
+    pub inj_sender: mpsc::Sender<KeyEvent>,
 }
 
 fn device_thread(mut args: DeviceThreadArgs) {
@@ -59,6 +60,7 @@ fn device_thread(mut args: DeviceThreadArgs) {
                 }
 
                 args.sender.send(KeyEvent { hid, kind, mods }).unwrap();
+                args.inj_sender.send(KeyEvent { hid, kind, mods }).unwrap();
             }
         }
     }
@@ -78,14 +80,32 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
     }
     log::debug!("Done enumerating devices");
 
-    for kbd in keyboards.into_iter() {
+    // Because we can't stop keyboard events from being propagated like
+    // in the windows implementation we do a little dance here: Grab all
+    // devices we can, and when we want them to propagate funnel all events
+    // into an injector
+    let (inj_sender, inj_receiver) = mpsc::channel::<KeyEvent>();
+    thread::spawn(move || {
+        let mut injector = crate::input_injection::InputInjector::new();
+
+        loop {
+            let event = inj_receiver.recv().unwrap();
+            injector.emit(event);
+        }
+    });
+
+    for mut kbd in keyboards.into_iter() {
         log::debug!(
             "Starting thread for device: {}",
             kbd.name().unwrap_or("<no name>")
         );
+
+        kbd.grab().unwrap();
+
         let args = DeviceThreadArgs {
             kbd: kbd,
             sender: sender.clone(),
+            inj_sender: inj_sender.clone(),
         };
         thread::spawn(move || device_thread(args));
     }
