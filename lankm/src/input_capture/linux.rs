@@ -41,7 +41,13 @@ fn device_thread(mut args: DeviceThreadArgs) {
                     continue;
                 }
 
-                let hid = LINUX_TO_HID_TABLE[key.0 as usize] as u16;
+                let hid = match LINUX_TO_HID_TABLE.get(key.0 as usize) {
+                    Some(hid) => *hid as u16,
+                    None => {
+                        log::warn!("No HID found for scancode: {}", key.0);
+                        continue;
+                    }
+                };
                 let kind = match event.value() {
                     0 => KeyEventKind::Release,
                     1 => KeyEventKind::Press,
