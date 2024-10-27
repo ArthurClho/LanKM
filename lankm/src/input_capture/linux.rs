@@ -125,6 +125,22 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
                     release(0xE4);
                     release(0xE2);
                     release(0xE6);
+                } else {
+                    // Release on client
+                    let release = |hid| {
+                        sender
+                            .send(KeyEvent {
+                                hid,
+                                kind: KeyEventKind::Release,
+                                mods: Modifiers::empty(),
+                            })
+                            .unwrap();
+                    };
+
+                    release(0xE0);
+                    release(0xE4);
+                    release(0xE2);
+                    release(0xE6);
                 }
             } else if sending {
                 sender.send(event).unwrap();
