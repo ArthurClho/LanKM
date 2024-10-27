@@ -31,6 +31,7 @@ struct DeviceThreadArgs {
 
 fn device_thread(mut args: DeviceThreadArgs) {
     let mut mods = Modifiers::empty();
+    let dev_name = args.kbd.name().unwrap_or("<no name>").to_owned();
 
     loop {
         let events = args.kbd.fetch_events().unwrap();
@@ -44,7 +45,7 @@ fn device_thread(mut args: DeviceThreadArgs) {
                 let hid = match LINUX_TO_HID_TABLE.get(key.0 as usize) {
                     Some(hid) => *hid as u16,
                     None => {
-                        log::warn!("No HID found for scancode: {}", key.0);
+                        log::warn!("Unknown HID {} from device {}", key.0, dev_name);
                         continue;
                     }
                 };
@@ -75,9 +76,16 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
     let mut keyboards = Vec::new();
     for (path, device) in evdev::enumerate() {
         let dev_name = device.name().unwrap_or("<no name>");
-        log::debug!("Found device at {}: {}", path.display(), dev_name);
+        log::debug!(
+            "Found device at {}: {} supporting events: {:?}",
+            path.display(),
+            dev_name,
+            device.supported_events()
+        );
 
-        if device.supported_events().contains(EventType::KEY) {
+        if device.supported_events().contains(EventType::KEY)
+            && device.supported_events().contains(EventType::REPEAT)
+        {
             log::debug!("Using {} as keyboard", dev_name);
             keyboards.push(device);
         }
