@@ -65,9 +65,16 @@ fn device_thread(mut args: DeviceThreadArgs) {
                     _ => {}
                 }
 
-                args.sender
-                    .send(Event::Key(KeyEvent { hid, kind, mods }))
-                    .unwrap();
+                let event = match hid {
+                    0x2B if kind == KeyEventKind::Press
+                        && mods.contains(Modifiers::CTRL | Modifiers::ALT) =>
+                    {
+                        Event::Hotkey
+                    }
+                    _ => Event::Key(KeyEvent { hid, kind, mods }),
+                };
+
+                args.sender.send(event).unwrap();
             }
         }
     }
@@ -104,11 +111,26 @@ pub fn init<F: 'static + Send + FnMut(Event) -> bool>(mut callback: F) {
 
         loop {
             let event = inj_receiver.recv().unwrap();
-            if !callback(event) {
-                match event {
-                    Event::Key(k) => injector.emit(k),
-                    _ => {}
+            let blocked = callback(event);
+            match event {
+                Event::Key(k) if !blocked => {
+                    injector.emit(k);
                 }
+                Event::Hotkey if blocked => {
+                    let mut release = |hid| {
+                        injector.emit(KeyEvent {
+                            hid,
+                            kind: KeyEventKind::Release,
+                            mods: Modifiers::empty(),
+                        })
+                    };
+
+                    release(0xE0);
+                    release(0xE4);
+                    release(0xE2);
+                    release(0xE6);
+                }
+                _ => {}
             }
         }
     });

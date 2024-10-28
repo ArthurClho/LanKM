@@ -3,6 +3,7 @@ use bitflags::bitflags;
 #[derive(Copy, Clone, Debug)]
 pub enum Event {
     Key(KeyEvent),
+    Hotkey,
 }
 
 impl Event {

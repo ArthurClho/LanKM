@@ -10,7 +10,7 @@ mod event;
 mod input_capture;
 mod input_injection;
 
-use event::{Event, KeyEventKind, Modifiers};
+use event::{Event, KeyEvent, KeyEventKind, Modifiers};
 
 #[derive(Parser, Clone, Debug)]
 enum Command {
@@ -92,22 +92,38 @@ fn run_server(port: u16) {
 
     let mut sending = false;
     input_capture::init(move |e| match e {
-        Event::Key(k) => {
-            if k.hid == 0x2B
-                && k.kind == KeyEventKind::Press
-                && k.mods.contains(Modifiers::CTRL | Modifiers::ALT)
-            {
-                sending = !sending;
-                log::info!("Turned {} sending", if sending { "On" } else { "Off" });
-                true
-            } else if sending {
+        Event::Key(_) => {
+            if sending {
                 sender.send(e).unwrap();
                 true
             } else {
                 false
             }
         }
-        _ => todo!(),
+        Event::Hotkey => {
+            sending = !sending;
+            log::info!("Turned {} sending", if sending { "On" } else { "Off" });
+
+            // Focus was brought back from the client, make sure it gets the hotkey release
+            if !sending {
+                let release = |hid| {
+                    sender
+                        .send(Event::Key(KeyEvent {
+                            hid,
+                            kind: KeyEventKind::Release,
+                            mods: Modifiers::empty(),
+                        }))
+                        .unwrap();
+                };
+
+                release(0xE0);
+                release(0xE4);
+                release(0xE2);
+                release(0xE6);
+            }
+
+            true
+        }
     });
 
     let listener = net::TcpListener::bind(("0.0.0.0", port)).unwrap();
