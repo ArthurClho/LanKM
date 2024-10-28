@@ -3,7 +3,7 @@ use std::thread;
 
 use evdev::{EventType, InputEventKind};
 
-use crate::data::{KeyEvent, KeyEventKind, Modifiers};
+use crate::event::{KeyEvent, KeyEventKind, Modifiers};
 
 const fn invert_linux_table(table: &[u8; 252]) -> [u8; 252] {
     let mut inverted = [0; 252];

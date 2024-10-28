@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 use std::thread;
 
-use crate::data::{KeyEvent, KeyEventKind};
+use crate::event::{KeyEvent, KeyEventKind};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, VIRTUAL_KEY, VK_LCONTROL,

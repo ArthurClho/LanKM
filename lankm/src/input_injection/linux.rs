@@ -1,4 +1,4 @@
-use crate::data::{KeyEvent, KeyEventKind};
+use crate::event::{KeyEvent, KeyEventKind};
 
 use evdev::uinput::{VirtualDevice, VirtualDeviceBuilder};
 use evdev::AttributeSet;

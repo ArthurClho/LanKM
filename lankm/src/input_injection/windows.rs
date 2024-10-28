@@ -1,4 +1,4 @@
-use crate::data::KeyEvent;
+use crate::event::KeyEvent;
 
 pub struct InputInjector {}
 

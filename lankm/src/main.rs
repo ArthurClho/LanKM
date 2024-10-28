@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use clap::Parser;
 
-mod data;
+mod event;
 mod input_capture;
 mod input_injection;
 
@@ -80,13 +80,13 @@ fn run_client(address: net::Ipv4Addr, port: u16) {
             }
         }
 
-        let event = data::KeyEvent::from_bytes(buffer);
+        let event = event::KeyEvent::from_bytes(buffer);
         injector.emit(event);
     }
 }
 
 fn run_server(port: u16) {
-    let (sender, receiver) = mpsc::channel::<data::KeyEvent>();
+    let (sender, receiver) = mpsc::channel::<event::KeyEvent>();
 
     input_capture::init(sender);
 
