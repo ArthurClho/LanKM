@@ -10,7 +10,7 @@ mod event;
 mod input_capture;
 mod input_injection;
 
-use event::Event;
+use event::{Event, KeyEventKind, Modifiers};
 
 #[derive(Parser, Clone, Debug)]
 enum Command {
@@ -90,7 +90,25 @@ fn run_client(address: net::Ipv4Addr, port: u16) {
 fn run_server(port: u16) {
     let (sender, receiver) = mpsc::channel::<Event>();
 
-    input_capture::init(sender);
+    let mut sending = false;
+    input_capture::init(move |e| match e {
+        Event::Key(k) => {
+            if k.hid == 0x2B
+                && k.kind == KeyEventKind::Press
+                && k.mods.contains(Modifiers::CTRL | Modifiers::ALT)
+            {
+                sending = !sending;
+                log::info!("Turned {} sending", if sending { "On" } else { "Off" });
+                true
+            } else if sending {
+                sender.send(e).unwrap();
+                true
+            } else {
+                false
+            }
+        }
+        _ => todo!(),
+    });
 
     let listener = net::TcpListener::bind(("0.0.0.0", port)).unwrap();
     println!("Waiting for client...");

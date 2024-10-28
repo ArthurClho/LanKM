@@ -73,7 +73,7 @@ fn device_thread(mut args: DeviceThreadArgs) {
     }
 }
 
-pub fn init(sender: mpsc::Sender<Event>) {
+pub fn init<F: 'static + Send + FnMut(Event) -> bool>(mut callback: F) {
     log::debug!("Enumerating devices");
     let mut keyboards = Vec::new();
     for (path, device) in evdev::enumerate() {
@@ -101,56 +101,14 @@ pub fn init(sender: mpsc::Sender<Event>) {
     let (inj_sender, inj_receiver) = mpsc::channel::<Event>();
     thread::spawn(move || {
         let mut injector = crate::input_injection::InputInjector::new();
-        let mut sending = false;
 
         loop {
-            let event = match inj_receiver.recv().unwrap() {
-                Event::Key(k) => k,
-                _ => todo!(),
-            };
-
-            if event.hid == 0x2B
-                && event.kind == KeyEventKind::Press
-                && event.mods.contains(Modifiers::CTRL | Modifiers::ALT)
-            {
-                sending = !sending;
-                log::info!("Turned {} sending", if sending { "On" } else { "Off" });
-
-                if sending {
-                    // Release ctrl and alt
-                    let mut release = |hid| {
-                        injector.emit(KeyEvent {
-                            hid,
-                            kind: KeyEventKind::Release,
-                            mods: Modifiers::empty(),
-                        })
-                    };
-
-                    release(0xE0);
-                    release(0xE4);
-                    release(0xE2);
-                    release(0xE6);
-                } else {
-                    // Release on client
-                    let release = |hid| {
-                        sender
-                            .send(Event::Key(KeyEvent {
-                                hid,
-                                kind: KeyEventKind::Release,
-                                mods: Modifiers::empty(),
-                            }))
-                            .unwrap();
-                    };
-
-                    release(0xE0);
-                    release(0xE4);
-                    release(0xE2);
-                    release(0xE6);
+            let event = inj_receiver.recv().unwrap();
+            if !callback(event) {
+                match event {
+                    Event::Key(k) => injector.emit(k),
+                    _ => {}
                 }
-            } else if sending {
-                sender.send(Event::Key(event)).unwrap();
-            } else {
-                injector.emit(event);
             }
         }
     });
