@@ -1,5 +1,19 @@
 use bitflags::bitflags;
 
+#[derive(Copy, Clone, Debug)]
+pub enum Event {
+    Key(KeyEvent),
+}
+
+impl Event {
+    pub fn to_bytes(self) -> [u8; 4] {
+        match self {
+            Event::Key(k) => k.to_bytes(),
+            _ => todo!(),
+        }
+    }
+}
+
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum KeyEventKind {

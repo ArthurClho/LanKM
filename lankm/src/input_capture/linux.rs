@@ -3,7 +3,7 @@ use std::thread;
 
 use evdev::{EventType, InputEventKind};
 
-use crate::event::{KeyEvent, KeyEventKind, Modifiers};
+use crate::event::{Event, KeyEvent, KeyEventKind, Modifiers};
 
 const fn invert_linux_table(table: &[u8; 252]) -> [u8; 252] {
     let mut inverted = [0; 252];
@@ -26,7 +26,7 @@ const LINUX_TO_HID_TABLE: [u8; 252] =
 
 struct DeviceThreadArgs {
     pub kbd: evdev::Device,
-    pub sender: mpsc::Sender<KeyEvent>,
+    pub sender: mpsc::Sender<Event>,
 }
 
 fn device_thread(mut args: DeviceThreadArgs) {
@@ -65,13 +65,15 @@ fn device_thread(mut args: DeviceThreadArgs) {
                     _ => {}
                 }
 
-                args.sender.send(KeyEvent { hid, kind, mods }).unwrap();
+                args.sender
+                    .send(Event::Key(KeyEvent { hid, kind, mods }))
+                    .unwrap();
             }
         }
     }
 }
 
-pub fn init(sender: mpsc::Sender<KeyEvent>) {
+pub fn init(sender: mpsc::Sender<Event>) {
     log::debug!("Enumerating devices");
     let mut keyboards = Vec::new();
     for (path, device) in evdev::enumerate() {
@@ -96,13 +98,16 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
     // in the windows implementation we do a little dance here: Grab all
     // devices we can, and when we want them to propagate funnel all events
     // into an injector
-    let (inj_sender, inj_receiver) = mpsc::channel::<KeyEvent>();
+    let (inj_sender, inj_receiver) = mpsc::channel::<Event>();
     thread::spawn(move || {
         let mut injector = crate::input_injection::InputInjector::new();
         let mut sending = false;
 
         loop {
-            let event = inj_receiver.recv().unwrap();
+            let event = match inj_receiver.recv().unwrap() {
+                Event::Key(k) => k,
+                _ => todo!(),
+            };
 
             if event.hid == 0x2B
                 && event.kind == KeyEventKind::Press
@@ -129,11 +134,11 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
                     // Release on client
                     let release = |hid| {
                         sender
-                            .send(KeyEvent {
+                            .send(Event::Key(KeyEvent {
                                 hid,
                                 kind: KeyEventKind::Release,
                                 mods: Modifiers::empty(),
-                            })
+                            }))
                             .unwrap();
                     };
 
@@ -143,7 +148,7 @@ pub fn init(sender: mpsc::Sender<KeyEvent>) {
                     release(0xE6);
                 }
             } else if sending {
-                sender.send(event).unwrap();
+                sender.send(Event::Key(event)).unwrap();
             } else {
                 injector.emit(event);
             }

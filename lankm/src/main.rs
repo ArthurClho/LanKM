@@ -10,6 +10,8 @@ mod event;
 mod input_capture;
 mod input_injection;
 
+use event::Event;
+
 #[derive(Parser, Clone, Debug)]
 enum Command {
     Client { address: net::Ipv4Addr, port: u16 },
@@ -86,7 +88,7 @@ fn run_client(address: net::Ipv4Addr, port: u16) {
 }
 
 fn run_server(port: u16) {
-    let (sender, receiver) = mpsc::channel::<event::KeyEvent>();
+    let (sender, receiver) = mpsc::channel::<Event>();
 
     input_capture::init(sender);
 

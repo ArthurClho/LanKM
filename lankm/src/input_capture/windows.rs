@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 use std::thread;
 
-use crate::event::{KeyEvent, KeyEventKind};
+use crate::event::{Event, KeyEvent, KeyEventKind, Modifiers};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, VIRTUAL_KEY, VK_LCONTROL,
@@ -38,7 +38,7 @@ static EXTENDED_TABLE: [u16; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-static mut GLOBAL_SENDER: Option<mpsc::Sender<KeyEvent>> = None;
+static mut GLOBAL_SENDER: Option<mpsc::Sender<Event>> = None;
 static mut GLOBAL_CAPTURING: bool = false;
 
 static mut GLOBAL_CONTROL_PRESSED: bool = false;
@@ -114,13 +114,21 @@ unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPA
         SCANCODE_TABLE[kbd_event.scanCode as usize]
     };
 
-    let event = KeyEvent { hid, kind };
-    GLOBAL_SENDER.as_ref().unwrap().send(event).unwrap();
+    let event = KeyEvent {
+        hid,
+        kind,
+        mods: Modifiers::empty(),
+    };
+    GLOBAL_SENDER
+        .as_ref()
+        .unwrap()
+        .send(Event::Key(event))
+        .unwrap();
 
     LRESULT(1)
 }
 
-pub fn init(sender: mpsc::Sender<KeyEvent>) {
+pub fn init(sender: mpsc::Sender<Event>) {
     thread::spawn(move || {
         unsafe {
             GLOBAL_SENDER = Some(sender);
