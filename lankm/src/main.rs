@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::net::{self, IpAddr, SocketAddr};
+use std::net::{self, IpAddr, SocketAddr, TcpStream};
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 use std::time::Duration;
@@ -87,6 +87,15 @@ fn run_client(address: net::Ipv4Addr, port: u16) {
     }
 }
 
+fn wait_for_client(port: u16) -> TcpStream {
+    // TODO: Maybe handle these unwraps gracefully
+    let listener = net::TcpListener::bind(("0.0.0.0", port)).unwrap();
+    let (client, addr) = listener.accept().unwrap();
+
+    log::info!("client connected from {}", addr);
+    client
+}
+
 fn run_server(port: u16) {
     let (sender, receiver) = mpsc::channel::<Event>();
 
@@ -126,25 +135,34 @@ fn run_server(port: u16) {
         }
     });
 
-    let listener = net::TcpListener::bind(("0.0.0.0", port)).unwrap();
-    println!("Waiting for client...");
-    let (mut client, addr) = listener.accept().unwrap();
-    println!("client connected from {}", addr);
-
-    // clear anything that was buffered before a client connected
-    let try_recv_error = loop {
-        match receiver.try_recv() {
-            Ok(_) => {}
-            Err(e) => break e,
-        }
-    };
-    match try_recv_error {
-        TryRecvError::Empty => {}
-        err => panic!("Channel error {}", err),
-    }
+    let mut maybe_client = None;
 
     loop {
+        let client = match maybe_client.as_mut() {
+            Some(c) => c,
+            None => {
+                maybe_client = Some(wait_for_client(port));
+
+                // clear anything that was buffered before a client connected
+                loop {
+                    match receiver.try_recv() {
+                        Ok(_) => {}
+                        Err(TryRecvError::Empty) => break,
+                        Err(e) => panic!("Channel read error: {}", e),
+                    }
+                }
+
+                maybe_client.as_mut().unwrap()
+            }
+        };
+
         let event = receiver.recv().unwrap();
-        client.write_all(&event.to_bytes()).unwrap();
+        match client.write_all(&event.to_bytes()) {
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("Error writing to client: {}", e);
+                maybe_client = None;
+            }
+        }
     }
 }
