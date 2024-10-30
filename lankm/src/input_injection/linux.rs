@@ -54,4 +54,11 @@ impl InputInjector {
         )];
         self.virtual_device.emit(events).unwrap();
     }
+
+    pub fn release_all(&mut self) {
+        let events: Vec<_> = (0..256)
+            .map(|i| evdev::InputEvent::new(evdev::EventType::KEY, i, 0))
+            .collect();
+        self.virtual_device.emit(&events).unwrap();
+    }
 }

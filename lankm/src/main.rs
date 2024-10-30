@@ -79,6 +79,7 @@ fn run_client(address: net::Ipv4Addr, port: u16) {
                 log::error!("Error reading from TcpStream: {}", e);
                 stream = None;
                 log::error!("Connection closed");
+                injector.release_all();
             }
         }
 
