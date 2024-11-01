@@ -1,11 +1,9 @@
-use std::sync::mpsc;
 use std::thread;
 
 use crate::event::{Event, KeyEvent, KeyEventKind, Modifiers};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, VIRTUAL_KEY, VK_LCONTROL,
-    VK_LMENU, VK_TAB,
+    SendInput, INPUT, INPUT_0, INPUT_TYPE, KEYBDINPUT, KEYBD_EVENT_FLAGS, VK_LCONTROL, VK_LMENU,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage, HHOOK,
@@ -38,73 +36,17 @@ static EXTENDED_TABLE: [u16; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-static mut GLOBAL_SENDER: Option<mpsc::Sender<Event>> = None;
-static mut GLOBAL_CAPTURING: bool = false;
+type CallbackFunction = Box<dyn FnMut(Event) -> bool + Send>;
 
-static mut GLOBAL_CONTROL_PRESSED: bool = false;
-static mut GLOBAL_ALT_PRESSED: bool = false;
+static mut GLOBAL_CALLBACK: Option<CallbackFunction> = None;
+
+static mut GLOBAL_MODS: Modifiers = Modifiers::empty();
 
 unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     let kbd_event: KBDLLHOOKSTRUCT = *(l_param.0 as *const _);
 
-    if kbd_event.flags.0 & 0x00000010 != 0 && GLOBAL_CAPTURING {
+    if kbd_event.flags.0 & 0x00000010 != 0 {
         // An injected event, very likely to be our own SendInput call
-        return CallNextHookEx(HHOOK(std::ptr::null_mut()), code, w_param, l_param);
-    }
-
-    let kind = match w_param.0 as u32 {
-        WM_KEYDOWN | WM_SYSKEYDOWN => KeyEventKind::Press,
-        WM_KEYUP | WM_SYSKEYUP => KeyEventKind::Release,
-        _ => panic!("Invalid wParam"),
-    };
-
-    match VIRTUAL_KEY(kbd_event.vkCode as u16) {
-        VK_LMENU => GLOBAL_ALT_PRESSED = kind == KeyEventKind::Press,
-        VK_LCONTROL => GLOBAL_CONTROL_PRESSED = kind == KeyEventKind::Press,
-        VK_TAB => {
-            if kind == KeyEventKind::Press && GLOBAL_ALT_PRESSED && GLOBAL_CONTROL_PRESSED {
-                GLOBAL_CAPTURING = !GLOBAL_CAPTURING;
-                println!("Set GLOBAL_CAPTURING to {}", GLOBAL_CAPTURING);
-
-                if GLOBAL_CAPTURING {
-                    let release_ctrl_key = KEYBDINPUT {
-                        wVk: VK_LCONTROL,
-                        wScan: 0x1D,
-                        dwFlags: KEYBD_EVENT_FLAGS(0x0002),
-                        time: 0,
-                        dwExtraInfo: 0,
-                    };
-                    let release_ctrl_input = INPUT {
-                        r#type: INPUT_TYPE(1),
-                        Anonymous: INPUT_0 {
-                            ki: release_ctrl_key,
-                        },
-                    };
-                    let release_alt_key = KEYBDINPUT {
-                        wVk: VK_LMENU,
-                        wScan: 0x38,
-                        dwFlags: KEYBD_EVENT_FLAGS(0x0002),
-                        time: 0,
-                        dwExtraInfo: 0,
-                    };
-                    let release_alt_input = INPUT {
-                        r#type: INPUT_TYPE(1),
-                        Anonymous: INPUT_0 {
-                            ki: release_alt_key,
-                        },
-                    };
-
-                    SendInput(
-                        &[release_ctrl_input, release_alt_input],
-                        std::mem::size_of::<INPUT>() as i32,
-                    );
-                }
-            }
-        }
-        _ => {}
-    }
-
-    if !GLOBAL_CAPTURING {
         return CallNextHookEx(HHOOK(std::ptr::null_mut()), code, w_param, l_param);
     }
 
@@ -114,24 +56,84 @@ unsafe extern "system" fn keyboard_hook(code: i32, w_param: WPARAM, l_param: LPA
         SCANCODE_TABLE[kbd_event.scanCode as usize]
     };
 
-    let event = KeyEvent {
-        hid,
-        kind,
-        mods: Modifiers::empty(),
+    let kind = match w_param.0 as u32 {
+        WM_KEYDOWN | WM_SYSKEYDOWN => KeyEventKind::Press,
+        WM_KEYUP | WM_SYSKEYUP => KeyEventKind::Release,
+        _ => panic!("Invalid wParam"),
     };
-    GLOBAL_SENDER
-        .as_ref()
-        .unwrap()
-        .send(Event::Key(event))
-        .unwrap();
 
-    LRESULT(1)
+    // TODO: Copied from Linux implementation, extract into a method
+    match hid {
+        0xE0 | 0xE4 => GLOBAL_MODS.set(Modifiers::CTRL, kind == KeyEventKind::Press),
+        0xE1 | 0xE5 => GLOBAL_MODS.set(Modifiers::SHIFT, kind == KeyEventKind::Press),
+        0xE2 | 0xE6 => GLOBAL_MODS.set(Modifiers::ALT, kind == KeyEventKind::Press),
+        _ => {}
+    }
+
+    let event = match hid {
+        0x2B if kind == KeyEventKind::Press
+            && GLOBAL_MODS.contains(Modifiers::CTRL | Modifiers::ALT) =>
+        {
+            Event::Hotkey
+        }
+        _ => Event::Key(KeyEvent {
+            hid,
+            kind,
+            mods: Modifiers::empty(),
+        }),
+    };
+
+    let cb = GLOBAL_CALLBACK.as_mut().unwrap();
+
+    let handled = cb(event);
+
+    match (event, handled) {
+        (Event::Key(_), true) => LRESULT(1),
+        (Event::Key(_), false) | (Event::Hotkey, false) => {
+            CallNextHookEx(HHOOK(std::ptr::null_mut()), code, w_param, l_param)
+        }
+        (Event::Hotkey, true) => {
+            // Release CTRL and ALT
+            let release_ctrl_key = KEYBDINPUT {
+                wVk: VK_LCONTROL,
+                wScan: 0x1D,
+                dwFlags: KEYBD_EVENT_FLAGS(0x0002),
+                time: 0,
+                dwExtraInfo: 0,
+            };
+            let release_ctrl_input = INPUT {
+                r#type: INPUT_TYPE(1),
+                Anonymous: INPUT_0 {
+                    ki: release_ctrl_key,
+                },
+            };
+            let release_alt_key = KEYBDINPUT {
+                wVk: VK_LMENU,
+                wScan: 0x38,
+                dwFlags: KEYBD_EVENT_FLAGS(0x0002),
+                time: 0,
+                dwExtraInfo: 0,
+            };
+            let release_alt_input = INPUT {
+                r#type: INPUT_TYPE(1),
+                Anonymous: INPUT_0 {
+                    ki: release_alt_key,
+                },
+            };
+            SendInput(
+                &[release_ctrl_input, release_alt_input],
+                std::mem::size_of::<INPUT>() as i32,
+            );
+
+            LRESULT(1)
+        }
+    }
 }
 
-pub fn init(sender: mpsc::Sender<Event>) {
+pub fn init<F: FnMut(Event) -> bool + 'static + Send>(callback: F) {
     thread::spawn(move || {
         unsafe {
-            GLOBAL_SENDER = Some(sender);
+            GLOBAL_CALLBACK = Some(Box::new(callback));
 
             SetWindowsHookExW(
                 WH_KEYBOARD_LL,

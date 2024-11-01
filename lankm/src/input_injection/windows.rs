@@ -10,4 +10,8 @@ impl InputInjector {
     pub fn emit(&mut self, _e: KeyEvent) {
         todo!();
     }
+
+    pub fn release_all(&mut self) {
+        todo!();
+    }
 }
